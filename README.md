@@ -31,6 +31,23 @@ pip install -e .
 
 Editable mode (`-e`) means changes to the cloned source take effect immediately without reinstalling.
 
+### Upgrading
+
+If you installed with Option 1:
+
+```bash
+pip install --upgrade git+https://github.com/virobit/quickast.git
+```
+
+If you installed with Option 2:
+
+```bash
+cd quickast
+git pull
+```
+
+Editable installs pick up changes from `git pull` automatically — no reinstall needed.
+
 ## What It Does
 
 QuickAST gives you a persistent, queryable index of your codebase:
