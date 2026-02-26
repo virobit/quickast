@@ -62,9 +62,12 @@ class IndexEventHandler:
             self._debounced_index(path)
 
 
-def _daemonize():
-    """Fork to background as a daemon process."""
-    if os.fork() > 0:
+def _daemonize(project_root: Path):
+    """Fork to background as a daemon process. Prints PID before parent exits."""
+    child_pid = os.fork()
+    if child_pid > 0:
+        # Parent — print the daemon PID and exit
+        print(f"Watcher daemon started (PID {child_pid}). Use 'quickast stop' to stop.")
         os._exit(0)
     os.setsid()
     if os.fork() > 0:
@@ -87,8 +90,7 @@ def start_watcher(project_root: Path, db_path: Path | None = None, daemon: bool 
         sys.exit(1)
 
     if daemon:
-        print(f"Starting watcher daemon for {project_root}...")
-        _daemonize()
+        _daemonize(project_root)
 
     indexer = Indexer(project_root, db_path=db_path)
 
