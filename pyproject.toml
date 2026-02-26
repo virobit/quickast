@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "quickast"
-version = "0.1.0"
+version = "0.1.1"
 description = "Instant codebase intelligence for AI coding agents. AST-powered symbol index with call graphs, route maps, and live file watching."
 readme = "README.md"
 license = "MIT"
