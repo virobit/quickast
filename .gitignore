@@ -24,6 +24,9 @@ ENV/
 # QuickAST generated files
 *.db
 
+# Secrets
+.env
+
 # OS
 .DS_Store
 Thumbs.db
