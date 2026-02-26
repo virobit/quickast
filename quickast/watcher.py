@@ -10,11 +10,15 @@ from threading import Lock, Timer
 from .indexer import Indexer
 
 
+DEFAULT_DEBOUNCE = 2.0
+
+
 class IndexEventHandler:
     """Debounced file change handler for the watcher."""
 
-    def __init__(self, indexer: Indexer):
+    def __init__(self, indexer: Indexer, debounce: float = DEFAULT_DEBOUNCE):
         self.indexer = indexer
+        self._debounce = debounce
         self._debounce_timers: dict[str, Timer] = {}
         self._index_lock = Lock()
 
@@ -44,7 +48,7 @@ class IndexEventHandler:
                 finally:
                     self._debounce_timers.pop(filepath, None)
 
-        timer = Timer(2.0, do_index)
+        timer = Timer(self._debounce, do_index)
         self._debounce_timers[filepath] = timer
         timer.start()
 
@@ -79,7 +83,9 @@ def _daemonize(project_root: Path):
     sys.stderr = devnull
 
 
-def start_watcher(project_root: Path, db_path: Path | None = None, daemon: bool = False):
+def start_watcher(project_root: Path, db_path: Path | None = None,
+                   daemon: bool = False, debounce: float = DEFAULT_DEBOUNCE,
+                   nice: bool = False):
     """Start the file watcher. If daemon=True, forks to background."""
     try:
         from watchdog.events import FileSystemEventHandler
@@ -92,6 +98,9 @@ def start_watcher(project_root: Path, db_path: Path | None = None, daemon: bool 
     if daemon:
         _daemonize(project_root)
 
+    if nice:
+        os.nice(10)
+
     indexer = Indexer(project_root, db_path=db_path)
 
     if not daemon:
@@ -101,7 +110,7 @@ def start_watcher(project_root: Path, db_path: Path | None = None, daemon: bool 
         print(f"  Scan complete: {stats['indexed']} updated, "
               f"{stats['skipped']} unchanged, {stats['removed']} removed")
 
-    handler = IndexEventHandler(indexer)
+    handler = IndexEventHandler(indexer, debounce=debounce)
 
     class WatchdogAdapter(FileSystemEventHandler):
         def on_any_event(self, event):

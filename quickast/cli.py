@@ -16,7 +16,10 @@ QuickAST — Instant codebase intelligence for AI coding agents.
 
 Usage:
     quickast init                       Build the index for the current directory
-    quickast watch [--daemon|-d]         Start the file watcher (--daemon to background)
+    quickast watch [options]             Start the file watcher
+        --daemon, -d                       Run in background
+        --debounce N                       Seconds to wait before re-indexing (default: 2)
+        --nice                             Lower CPU priority (nice 10)
     quickast stop                       Stop the background watcher
     quickast query <name>               Find where a symbol is defined
     quickast search <pattern>           Fuzzy search symbols (use % wildcards)
@@ -69,10 +72,20 @@ def cmd_init():
 
 
 def cmd_watch(args: list[str]):
-    from .watcher import start_watcher
+    from .watcher import start_watcher, DEFAULT_DEBOUNCE
     root = _find_project_root()
     daemon = "--daemon" in args or "-d" in args
-    start_watcher(root, daemon=daemon)
+    nice = "--nice" in args
+    debounce = DEFAULT_DEBOUNCE
+    if "--debounce" in args:
+        idx = args.index("--debounce")
+        if idx + 1 < len(args):
+            try:
+                debounce = float(args[idx + 1])
+            except ValueError:
+                print("Error: --debounce requires a number (seconds).")
+                return
+    start_watcher(root, daemon=daemon, debounce=debounce, nice=nice)
 
 
 def cmd_stop():
