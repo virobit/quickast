@@ -6,12 +6,8 @@ QuickAST parses your Python codebase, builds a SQLite index of every symbol, cal
 
 ## Installation
 
-QuickAST is not yet published on PyPI. Install directly from GitHub.
-
-### Option 1: Install from GitHub (recommended)
-
 ```bash
-pip install git+https://github.com/virobit/quickast.git
+pip install quickast
 ```
 
 Then navigate to any Python project and build the index:
@@ -21,7 +17,7 @@ cd /path/to/your/project
 quickast init
 ```
 
-### Option 2: Clone and install locally
+### Install from source (alternative)
 
 ```bash
 git clone https://github.com/virobit/quickast.git
@@ -33,20 +29,16 @@ Editable mode (`-e`) means changes to the cloned source take effect immediately 
 
 ### Upgrading
 
-If you installed with Option 1:
-
 ```bash
-pip install --upgrade git+https://github.com/virobit/quickast.git
+pip install --upgrade quickast
 ```
 
-If you installed with Option 2:
+Or if installed from source:
 
 ```bash
 cd quickast
 git pull
 ```
-
-Editable installs pick up changes from `git pull` automatically — no reinstall needed.
 
 ## What It Does
 
