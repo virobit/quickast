@@ -1,41 +1,38 @@
 # QuickAST
 
-**Instant codebase intelligence for AI coding agents.**
+**AST-powered codebase index for Python projects.**
 
-QuickAST scans your Python codebase, builds a lightweight SQLite index of every symbol, call relationship, import, and API route, then keeps it current with automatic file watching. AI coding agents go from slow, token-burning exploratory searches to millisecond lookups.
-
-One command to install. One command to index. Immediate speed improvements on every AI interaction.
-
-## The Problem
-
-AI coding agents (Claude Code, Cursor, Copilot, etc.) spend significant time searching your codebase using grep, file globbing, and exploratory reads. On large codebases, this:
-
-- **Burns tokens** on search results that aren't relevant
-- **Takes 30-75 seconds** per exploratory search
-- **Misses context** because agents can only search linearly
-- **Bloats the context window** with raw grep output
-
-## The Solution
-
-QuickAST pre-indexes your entire codebase into a queryable SQLite database. When an AI agent needs to find a symbol, trace a call chain, or understand module architecture, it gets the answer in **milliseconds** instead of minutes.
-
-```
-# Before QuickAST: Agent greps blindly
-$ rg "def create_user" --type py     # 30+ seconds on large repos, noisy results
-
-# After QuickAST: Precise, instant answers
-$ quickast query create_user         # <1ms, exact definition with file + line
-$ quickast callers-of create_user    # <1ms, every call site across the codebase
-$ quickast callees create_user       # <1ms, everything this function calls
-```
-
-## Quick Start
-
-### Install
+QuickAST parses your Python codebase, builds a SQLite index of every symbol, call relationship, import, and API route, then keeps it current with automatic file watching.
 
 ```bash
 pip install quickast
+quickast init
 ```
+
+## What It Does
+
+QuickAST gives you a persistent, queryable index of your codebase:
+
+```bash
+$ quickast query create_user           # Find where a symbol is defined
+  function  app/users.py:45  def create_user(name: str, email: str) -> dict
+
+$ quickast callers-of create_user      # What calls this function?
+  app/api.py:112  in handle_signup
+  tests/test_users.py:23  in test_create
+
+$ quickast callees create_user         # What does this function call?
+  L46  validate_email (method)
+  L48  save_record (method)
+
+$ quickast impact create_user          # Transitive dependency chain
+  Upstream callers (3): handle_signup, register_endpoint, ...
+  Downstream callees (5): validate_email, save_record, ...
+```
+
+Queries return in milliseconds from the SQLite index. No re-parsing, no scanning.
+
+## Quick Start
 
 ### Index your project
 
@@ -44,7 +41,7 @@ cd /path/to/your/project
 quickast init
 ```
 
-That's it. QuickAST walks your project, parses every Python file using AST analysis, and builds the index. For a 100-file project, this takes about 2 seconds.
+QuickAST walks your project, parses every Python file using AST analysis, and builds the index.
 
 ### Start the file watcher (optional)
 
@@ -52,7 +49,7 @@ That's it. QuickAST walks your project, parses every Python file using AST analy
 quickast watch
 ```
 
-This runs in the background and automatically re-indexes any file you save. The index stays perfectly current without manual rebuilds.
+Runs in the background and re-indexes any file you save. The index stays current without manual rebuilds.
 
 ## Commands
 
@@ -61,7 +58,7 @@ This runs in the background and automatically re-indexes any file you save. The 
 | `quickast init` | Build the index for the current project |
 | `quickast watch` | Start the file watcher daemon |
 | `quickast query <name>` | Find where a symbol (function/class/method) is defined |
-| `quickast search <pattern>` | Fuzzy search symbols (use `%` wildcards: `%user%`, `%auth%`) |
+| `quickast search <pattern>` | Search symbols (use `%` wildcards: `%user%`, `%auth%`) |
 | `quickast refs <name>` | Find all files that import a symbol |
 | `quickast file <path>` | List all symbols defined in a file |
 | `quickast callees <name>` | What does function X call? |
@@ -75,33 +72,23 @@ This runs in the background and automatically re-indexes any file you save. The 
 
 ## What Gets Indexed
 
-QuickAST extracts and indexes:
-
 - **Symbols** — Every function, class, and method with full signatures, docstrings, and line numbers
-- **Call graph** — Every function call with caller/callee context, enabling "who calls X?" and "what does X call?" queries
-- **Imports** — Every import statement, enabling "which files use module X?" queries
-- **API routes** — FastAPI, Flask, and Click decorator patterns automatically detected
-- **File metadata** — Line counts, modification times, and file sizes for change tracking
+- **Call graph** — Every function call with caller/callee context (who calls X, what does X call)
+- **Imports** — Every import statement (which files use module X)
+- **API routes** — FastAPI, Flask, and Click decorator patterns
+- **File metadata** — Line counts, modification times, file sizes
 
-## How QuickAST Compares
+## Capabilities
 
-|  | tree-sitter | ast-grep | symbex | **QuickAST** |
-|--|-------------|----------|--------|------------|
-| Persistent SQLite index | - | - | - | **Yes** |
-| Call graph (callers/callees) | - | - | - | **Yes** |
-| Transitive impact analysis | - | - | - | **Yes** |
-| API route map | - | - | - | **Yes** |
-| Live file watching | - | - | - | **Yes** |
-| AI agent integration | - | - | - | **Yes** |
-| Millisecond queries | - | - | - | **Yes** |
-| Symbol search | - | Pattern-based | Yes | **Yes** |
-| Multi-framework detection | - | - | - | **Yes** |
-
-**tree-sitter** is a low-level parsing library. It gives you AST nodes but no index, no persistence, no call graph. You'd have to build everything on top of it.
-
-**ast-grep** is a pattern matching tool for one-off searches. No persistent index — every query re-parses from scratch. No call graph or route detection.
-
-**symbex** finds Python symbols and prints source code. Stateless — no index, no call graph, no callers/callees, no file watching. Re-parses the codebase on every invocation.
+| Feature | Description |
+|---------|-------------|
+| Persistent SQLite index | Index once, query instantly — no re-parsing on each lookup |
+| Call graph | Trace callers and callees across the entire codebase |
+| Transitive impact analysis | See the full upstream/downstream dependency chain at any depth |
+| API route map | Automatically detects REST endpoints, CLI commands, and page routes |
+| Live file watching | File watcher re-indexes on save — index stays current |
+| Incremental indexing | Only re-indexes files that changed since the last build |
+| Framework detection | Recognizes FastAPI, Flask, and Click patterns out of the box |
 
 ## Using QuickAST with AI Agents
 
@@ -126,22 +113,21 @@ quickast routes               # API surface map
 
 Always query the index first. Only fall back to grep for string literals,
 comments, or config values that aren't in the AST.
-\`\`\`
 ```
 
 ### With Other AI Tools
 
-QuickAST is a standard CLI tool. Any AI agent that can run shell commands can use it. Point the agent to the commands above and it will start using the index automatically.
+QuickAST is a standard CLI tool. Any AI agent that can run shell commands can use it.
 
 ## How It Works
 
-1. **Parse** — QuickAST uses Python's built-in `ast` module to parse every `.py` file into an Abstract Syntax Tree
-2. **Extract** — Symbols, imports, call relationships, and route decorators are extracted from the AST
-3. **Store** — Everything goes into a SQLite database (`.quickast.db`) in your project root
-4. **Watch** — The optional file watcher uses `watchdog` to detect changes and re-index only modified files
-5. **Query** — The CLI reads from SQLite, which returns results in under 1ms for most queries
+1. **Parse** — Uses Python's built-in `ast` module to parse every `.py` file
+2. **Extract** — Pulls symbols, imports, call relationships, and route decorators from the AST
+3. **Store** — Writes everything to a SQLite database (`.quickast.db`) in your project root
+4. **Watch** — The file watcher uses `watchdog` to detect changes and re-index modified files
+5. **Query** — The CLI reads from SQLite, returning results in under 1ms
 
-The index is a single `.quickast.db` file. Add it to your `.gitignore` — it's generated and can be rebuilt in seconds.
+The index is a single `.quickast.db` file. Add it to `.gitignore` — it can be rebuilt in seconds.
 
 ## Configuration
 
@@ -155,10 +141,10 @@ QuickAST automatically excludes common non-source directories:
 ## Requirements
 
 - **Python**: 3.10+
-- **OS**: Linux, macOS (Windows support planned)
-- **Dependencies**: `watchdog` (for file watching only)
+- **OS**: Linux, macOS
+- **Dependencies**: `watchdog` (for file watching)
 
-No external parsing libraries needed — QuickAST uses Python's built-in `ast` module.
+No external parsing libraries — QuickAST uses Python's built-in `ast` module.
 
 ## License
 
