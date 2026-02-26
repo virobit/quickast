@@ -192,20 +192,15 @@ MIT
 
 ## Running Tests
 
-Clone the repo and install with dev dependencies:
+Tests are in the cloned repo, not in the pip install. You must run them from inside the `quickast` directory.
 
 ```bash
 git clone https://github.com/virobit/quickast.git
 cd quickast
 python3 -m venv venv
 source venv/bin/activate
-pip install -e ".[dev]"
-```
-
-Run the test suite:
-
-```bash
-pytest tests/ -v
+pip install -e ".[dev]"    # Installs pytest and pytest-cov
+pytest tests/ -v           # Run from inside the quickast directory
 ```
 
 All 24 tests should pass. The tests cover parsing, indexing, incremental builds, and all query types using temporary project directories — no external dependencies or network access required.
