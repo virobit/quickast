@@ -4,10 +4,32 @@
 
 QuickAST parses your Python codebase, builds a SQLite index of every symbol, call relationship, import, and API route, then keeps it current with automatic file watching.
 
+## Installation
+
+QuickAST is not yet published on PyPI. Install directly from GitHub.
+
+### Option 1: Install from GitHub (recommended)
+
 ```bash
-pip install quickast
+pip install git+https://github.com/virobit/quickast.git
+```
+
+Then navigate to any Python project and build the index:
+
+```bash
+cd /path/to/your/project
 quickast init
 ```
+
+### Option 2: Clone and install locally
+
+```bash
+git clone https://github.com/virobit/quickast.git
+cd quickast
+pip install -e .
+```
+
+Editable mode (`-e`) means changes to the cloned source take effect immediately without reinstalling.
 
 ## What It Does
 
@@ -33,15 +55,6 @@ $ quickast impact create_user          # Transitive dependency chain
 Queries return in milliseconds from the SQLite index. No re-parsing, no scanning.
 
 ## Quick Start
-
-### Index your project
-
-```bash
-cd /path/to/your/project
-quickast init
-```
-
-QuickAST walks your project, parses every Python file using AST analysis, and builds the index.
 
 ### Start the file watcher (optional)
 
@@ -153,3 +166,11 @@ MIT
 ## Contributing
 
 Contributions welcome. Please open an issue first to discuss what you'd like to change.
+
+## Disclaimer
+
+QuickAST is provided "as is", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, and noninfringement. In no event shall the authors or copyright holders be liable for any claim, damages, or other liability, whether in an action of contract, tort, or otherwise, arising from, out of, or in connection with the software or the use or other dealings in the software.
+
+QuickAST performs read-only analysis of your source code using Python's built-in `ast` module. It does not modify, execute, or transmit your code. The SQLite index is stored locally in your project directory.
+
+This project is in early development. APIs and CLI behavior may change between versions.
