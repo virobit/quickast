@@ -81,6 +81,13 @@ quickast watch --daemon  # Background (frees your terminal)
 quickast stop            # Stop the background watcher
 ```
 
+Check if the watcher is running:
+
+```bash
+cat .quickast.pid        # Show the watcher's process ID
+ps -p $(cat .quickast.pid) -o pid,cmd   # Verify the process is alive
+```
+
 Re-indexes any file you save. The index stays current without manual rebuilds.
 
 ## Commands
