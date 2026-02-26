@@ -16,7 +16,8 @@ QuickAST — Instant codebase intelligence for AI coding agents.
 
 Usage:
     quickast init                       Build the index for the current directory
-    quickast watch                      Start the file watcher daemon
+    quickast watch [--daemon|-d]         Start the file watcher (--daemon to background)
+    quickast stop                       Stop the background watcher
     quickast query <name>               Find where a symbol is defined
     quickast search <pattern>           Fuzzy search symbols (use % wildcards)
     quickast refs <name>                Find all files that import a symbol
@@ -67,10 +68,29 @@ def cmd_init():
     print(f"\nIndex saved to: {indexer.db_path}")
 
 
-def cmd_watch():
+def cmd_watch(args: list[str]):
     from .watcher import start_watcher
     root = _find_project_root()
-    start_watcher(root)
+    daemon = "--daemon" in args or "-d" in args
+    start_watcher(root, daemon=daemon)
+
+
+def cmd_stop():
+    root = _find_project_root()
+    pid_file = root / ".quickast.pid"
+    if not pid_file.exists():
+        print("No watcher running (no .quickast.pid file found).")
+        return
+    try:
+        pid = int(pid_file.read_text().strip())
+        import os
+        os.kill(pid, 15)  # SIGTERM
+        print(f"Stopped watcher (PID {pid}).")
+    except ProcessLookupError:
+        print("Watcher process not found (stale PID file). Cleaning up.")
+        pid_file.unlink(missing_ok=True)
+    except Exception as e:
+        print(f"Error stopping watcher: {e}")
 
 
 def cmd_query(args: list[str]):
@@ -303,7 +323,7 @@ def main():
 
     commands = {
         "init": lambda: cmd_init(),
-        "watch": lambda: cmd_watch(),
+        "watch": lambda: cmd_watch(rest),
         "query": lambda: cmd_query(rest),
         "search": lambda: cmd_search(rest),
         "refs": lambda: cmd_refs(rest),
@@ -315,6 +335,7 @@ def main():
         "route": lambda: cmd_route(rest),
         "changes": lambda: cmd_changes(rest),
         "summary": lambda: cmd_summary(rest),
+        "stop": lambda: cmd_stop(),
         "stats": lambda: cmd_stats(),
         "version": lambda: cmd_version(),
         "--version": lambda: cmd_version(),

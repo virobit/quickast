@@ -59,17 +59,20 @@ Queries return in milliseconds from the SQLite index. No re-parsing, no scanning
 ### Start the file watcher (optional)
 
 ```bash
-quickast watch
+quickast watch           # Foreground (see output, Ctrl+C to stop)
+quickast watch --daemon  # Background (frees your terminal)
+quickast stop            # Stop the background watcher
 ```
 
-Runs in the background and re-indexes any file you save. The index stays current without manual rebuilds.
+Re-indexes any file you save. The index stays current without manual rebuilds.
 
 ## Commands
 
 | Command | What It Does |
 |---------|-------------|
 | `quickast init` | Build the index for the current project |
-| `quickast watch` | Start the file watcher daemon |
+| `quickast watch [--daemon]` | Start the file watcher (`--daemon` to run in background) |
+| `quickast stop` | Stop the background watcher |
 | `quickast query <name>` | Find where a symbol (function/class/method) is defined |
 | `quickast search <pattern>` | Search symbols (use `%` wildcards: `%user%`, `%auth%`) |
 | `quickast refs <name>` | Find all files that import a symbol |

@@ -62,8 +62,22 @@ class IndexEventHandler:
             self._debounced_index(path)
 
 
-def start_watcher(project_root: Path, db_path: Path | None = None):
-    """Start the file watcher daemon. Blocks until interrupted."""
+def _daemonize():
+    """Fork to background as a daemon process."""
+    if os.fork() > 0:
+        sys.exit(0)
+    os.setsid()
+    if os.fork() > 0:
+        sys.exit(0)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    devnull = open(os.devnull, "w")
+    sys.stdout = devnull
+    sys.stderr = devnull
+
+
+def start_watcher(project_root: Path, db_path: Path | None = None, daemon: bool = False):
+    """Start the file watcher. If daemon=True, forks to background."""
     try:
         from watchdog.events import FileSystemEventHandler
         from watchdog.observers import Observer
@@ -90,8 +104,15 @@ def start_watcher(project_root: Path, db_path: Path | None = None):
     observer.start()
 
     pid_file = project_root / ".quickast.pid"
+
+    if daemon:
+        print(f"Starting watcher daemon for {project_root}...")
+        _daemonize()
+
     pid_file.write_text(str(os.getpid()))
-    print(f"Watching {project_root} for Python file changes (PID {os.getpid()})...")
+
+    if not daemon:
+        print(f"Watching {project_root} for Python file changes (PID {os.getpid()})...")
 
     running = True
 
