@@ -190,6 +190,26 @@ No external parsing libraries — QuickAST uses Python's built-in `ast` module.
 
 MIT
 
+## Running Tests
+
+Clone the repo and install with dev dependencies:
+
+```bash
+git clone https://github.com/virobit/quickast.git
+cd quickast
+python3 -m venv venv
+source venv/bin/activate
+pip install -e ".[dev]"
+```
+
+Run the test suite:
+
+```bash
+pytest tests/ -v
+```
+
+All 24 tests should pass. The tests cover parsing, indexing, incremental builds, and all query types using temporary project directories — no external dependencies or network access required.
+
 ## Contributing
 
 Contributions welcome. Please open an issue first to discuss what you'd like to change.
