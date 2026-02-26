@@ -65,10 +65,10 @@ class IndexEventHandler:
 def _daemonize():
     """Fork to background as a daemon process."""
     if os.fork() > 0:
-        sys.exit(0)
+        os._exit(0)
     os.setsid()
     if os.fork() > 0:
-        sys.exit(0)
+        os._exit(0)
     sys.stdout.flush()
     sys.stderr.flush()
     devnull = open(os.devnull, "w")
@@ -86,12 +86,18 @@ def start_watcher(project_root: Path, db_path: Path | None = None, daemon: bool 
         print("Install it with: pip install quickast", file=sys.stderr)
         sys.exit(1)
 
+    if daemon:
+        print(f"Starting watcher daemon for {project_root}...")
+        _daemonize()
+
     indexer = Indexer(project_root, db_path=db_path)
 
-    print("Running incremental scan...")
+    if not daemon:
+        print("Running incremental scan...")
     stats = indexer.build()
-    print(f"  Scan complete: {stats['indexed']} updated, "
-          f"{stats['skipped']} unchanged, {stats['removed']} removed")
+    if not daemon:
+        print(f"  Scan complete: {stats['indexed']} updated, "
+              f"{stats['skipped']} unchanged, {stats['removed']} removed")
 
     handler = IndexEventHandler(indexer)
 
@@ -104,11 +110,6 @@ def start_watcher(project_root: Path, db_path: Path | None = None, daemon: bool 
     observer.start()
 
     pid_file = project_root / ".quickast.pid"
-
-    if daemon:
-        print(f"Starting watcher daemon for {project_root}...")
-        _daemonize()
-
     pid_file.write_text(str(os.getpid()))
 
     if not daemon:
