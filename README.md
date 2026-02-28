@@ -1,6 +1,10 @@
-# QuickAST
+<p align="center">
+  <img src="https://raw.githubusercontent.com/virobit/quickast/main/logo-256.png" alt="QuickAST" width="128" height="128">
+</p>
 
-**AST-powered codebase index for Python projects.**
+<h1 align="center">QuickAST</h1>
+
+<p align="center"><strong>AST-powered codebase index for Python projects.</strong></p>
 
 QuickAST parses your Python codebase, builds a SQLite index of every symbol, call relationship, import, and API route, then keeps it current with automatic file watching.
 

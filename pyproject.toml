@@ -43,7 +43,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/virobit/quickast"
+Homepage = "https://quickast.ai"
+Documentation = "https://quickast.ai"
 Repository = "https://github.com/virobit/quickast"
 Issues = "https://github.com/virobit/quickast/issues"
 
