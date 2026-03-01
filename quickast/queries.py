@@ -137,39 +137,39 @@ def query_impact(db_path: Path, name: str, depth: int = 3) -> dict:
         downstream = set()
         frontier = {name}
         for _ in range(depth):
-            next_frontier = set()
-            for fn in frontier:
-                rows = conn.execute(
-                    "SELECT DISTINCT callee_name FROM call_references WHERE caller_qualified = ?",
-                    (fn,),
-                ).fetchall()
-                for r in rows:
-                    cn = r["callee_name"]
-                    if cn not in downstream and cn not in frontier:
-                        next_frontier.add(cn)
-                        downstream.add(cn)
-            frontier = next_frontier
             if not frontier:
                 break
+            placeholders = ",".join("?" for _ in frontier)
+            rows = conn.execute(
+                f"SELECT DISTINCT callee_name FROM call_references WHERE caller_qualified IN ({placeholders})",
+                list(frontier),
+            ).fetchall()
+            next_frontier = set()
+            for r in rows:
+                cn = r["callee_name"]
+                if cn not in downstream and cn not in frontier:
+                    next_frontier.add(cn)
+                    downstream.add(cn)
+            frontier = next_frontier
 
         # Upstream: what calls name (transitively)
         upstream = set()
         frontier = {name}
         for _ in range(depth):
-            next_frontier = set()
-            for fn in frontier:
-                rows = conn.execute(
-                    "SELECT DISTINCT caller_qualified FROM call_references WHERE callee_name = ?",
-                    (fn,),
-                ).fetchall()
-                for r in rows:
-                    cq = r["caller_qualified"]
-                    if cq not in upstream and cq not in frontier:
-                        next_frontier.add(cq)
-                        upstream.add(cq)
-            frontier = next_frontier
             if not frontier:
                 break
+            placeholders = ",".join("?" for _ in frontier)
+            rows = conn.execute(
+                f"SELECT DISTINCT caller_qualified FROM call_references WHERE callee_name IN ({placeholders})",
+                list(frontier),
+            ).fetchall()
+            next_frontier = set()
+            for r in rows:
+                cq = r["caller_qualified"]
+                if cq not in upstream and cq not in frontier:
+                    next_frontier.add(cq)
+                    upstream.add(cq)
+            frontier = next_frontier
 
         return {
             "name": name,
@@ -184,8 +184,10 @@ def query_routes(db_path: Path, route_type: str = None) -> list[dict]:
     """List API routes, optionally filtered by type."""
     conn = get_db(db_path)
     try:
-        sql = """SELECT r.*, f.relative_path FROM api_routes r
-                 LEFT JOIN files f ON r.file_id = f.id WHERE 1=1"""
+        sql = """SELECT r.route_type, r.path, r.method, r.handler_function,
+                        r.handler_qualified, r.line, r.description, r.extra,
+                        f.relative_path
+                 FROM api_routes r LEFT JOIN files f ON r.file_id = f.id WHERE 1=1"""
         params = []
         if route_type:
             sql += " AND r.route_type = ?"
@@ -202,8 +204,10 @@ def query_route(db_path: Path, path: str) -> list[dict]:
     conn = get_db(db_path)
     try:
         rows = conn.execute(
-            """SELECT r.*, f.relative_path FROM api_routes r
-               LEFT JOIN files f ON r.file_id = f.id
+            """SELECT r.route_type, r.path, r.method, r.handler_function,
+                      r.handler_qualified, r.line, r.description, r.extra,
+                      f.relative_path
+               FROM api_routes r LEFT JOIN files f ON r.file_id = f.id
                WHERE r.path = ? OR r.path LIKE ?
                ORDER BY r.path""",
             (path, f"%{path}%"),

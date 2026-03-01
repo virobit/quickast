@@ -2,7 +2,6 @@
 
 import os
 import sqlite3
-import sys
 from pathlib import Path
 
 from .db import get_db, init_db, find_db_path
