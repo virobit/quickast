@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from .db import get_db, init_db, find_db_path
-from .parser import parse_file
+from .parser import parse_file, parse_js_file, parse_markdown_file
 
 # Directories to always skip
 DEFAULT_EXCLUDE_DIRS = {
@@ -36,13 +36,13 @@ class Indexer:
         except ValueError:
             return True
 
-    def find_python_files(self) -> list[Path]:
+    def find_files(self) -> list[Path]:
         """Walk the project tree and find all Python files."""
         files = []
         for root, dirs, filenames in os.walk(self.project_root):
             dirs[:] = [d for d in dirs if d not in self.exclude_dirs]
             for f in filenames:
-                if f.endswith(".py"):
+                if f.endswith(".py") or f.endswith(".js") or f.endswith(".md"):
                     fp = Path(root) / f
                     if not self.should_skip(fp):
                         files.append(fp)
@@ -67,11 +67,24 @@ class Indexer:
 
             if existing and existing["mtime"] >= stat.st_mtime:
                 return False
+            if filepath.suffix == ".py":
+                parsed = parse_file(filepath)
+            elif filepath.suffix == ".js":
+                parsed = parse_js_file(filepath)
+            elif filepath.suffix == ".md":
+                parsed = parse_markdown_file(filepath)
+            else:
+                return False
 
-            parsed = parse_file(filepath)
+
 
             if existing:
+                try:
+                    conn.execute("DELETE FROM doc_fts WHERE file_path = ?", (relative,))
+                except Exception:
+                    pass
                 conn.execute("DELETE FROM files WHERE id = ?", (existing["id"],))
+
 
             cursor = conn.execute(
                 """INSERT INTO files (path, relative_path, mtime, size, line_count)
@@ -80,33 +93,56 @@ class Indexer:
             )
             file_id = cursor.lastrowid
 
-            self._insert_symbols(conn, file_id, parsed["symbols"], parent_id=None)
-
-            for imp in parsed["imports"]:
-                conn.execute(
-                    """INSERT INTO imports (file_id, module, name, alias, line)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (file_id, imp["module"], imp["name"], imp["alias"], imp["line"]),
-                )
-
-            for call in parsed["calls"]:
-                conn.execute(
-                    """INSERT INTO call_references (file_id, caller_qualified,
-                       callee_name, callee_type, callee_object, line)
-                       VALUES (?, ?, ?, ?, ?, ?)""",
-                    (file_id, call["caller"], call["callee_name"],
-                     call["callee_type"], call.get("callee_object"), call["line"]),
-                )
-
-            for route in parsed["routes"]:
-                conn.execute(
-                    """INSERT INTO api_routes (file_id, route_type, path, method,
-                       handler_function, handler_qualified, line, description,
-                       service, extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (file_id, route["route_type"], route["path"], route.get("method"),
-                     route["handler"], route.get("qualified"), route["line"],
-                     route.get("description"), None, route.get("extra")),
-                )
+            if filepath.suffix == '.py':
+                self._insert_symbols(conn, file_id, parsed["symbols"], parent_id=None)
+                for imp in parsed["imports"]:
+                    conn.execute(
+                        """INSERT INTO imports (file_id, module, name, alias, line)
+                           VALUES (?, ?, ?, ?, ?)""",
+                        (file_id, imp["module"], imp["name"], imp["alias"], imp["line"]),
+                    )
+                for call in parsed["calls"]:
+                    conn.execute(
+                        """INSERT INTO call_references (file_id, caller_qualified,
+                           callee_name, callee_type, callee_object, line)
+                           VALUES (?, ?, ?, ?, ?, ?)""",
+                        (file_id, call["caller"], call["callee_name"],
+                         call["callee_type"], call.get("callee_object"), call["line"]),
+                    )
+                for route in parsed["routes"]:
+                    conn.execute(
+                        """INSERT INTO api_routes (file_id, route_type, path, method,
+                           handler_function, handler_qualified, line, description,
+                           service, extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (file_id, route["route_type"], route["path"], route.get("method"),
+                         route["handler"], route.get("qualified"), route["line"],
+                         route.get("description"), None, route.get("extra")),
+                    )
+            elif filepath.suffix == '.js':
+                for sym in parsed["js_symbols"]:
+                    conn.execute(
+                        """INSERT INTO js_file_symbols (file_id, name, symbol_type, line, end_line, params, interval_ms, parent_class)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (file_id, sym["name"], sym["symbol_type"], sym["line"], sym.get("end_line"), sym.get("params"), sym.get("interval_ms"), sym.get("parent_class"))
+                    )
+            elif filepath.suffix == '.md':
+                section_ids = {}
+                for i, h in enumerate(parsed["sections"]):
+                    parent_db_id = section_ids.get(h["parent_idx"]) if h["parent_idx"] is not None else None
+                    cursor = conn.execute(
+                        """INSERT INTO doc_sections (file_id, heading, level, line, end_line, parent_id)
+                           VALUES (?, ?, ?, ?, ?, ?)""",
+                        (file_id, h["heading"], h["level"], h["line"], h["end_line"], parent_db_id)
+                    )
+                    section_ids[i] = cursor.lastrowid
+                for entry in parsed["fts_entries"]:
+                    try:
+                        conn.execute(
+                            "INSERT INTO doc_fts (file_path, heading, content) VALUES (?, ?, ?)",
+                            (relative, entry["heading"], entry["content"])
+                        )
+                    except Exception:
+                        pass
 
             conn.commit()
             return True
@@ -133,6 +169,12 @@ class Indexer:
     def remove_file(self, filepath: Path):
         """Remove a file and all its symbols from the index."""
         conn = get_db(self.db_path)
+
+        try:
+            rel = str(filepath.relative_to(self.project_root))
+            conn.execute("DELETE FROM doc_fts WHERE file_path = ?", (rel,))
+        except Exception:
+            pass
         try:
             conn.execute("DELETE FROM files WHERE path = ?", (str(filepath),))
             conn.commit()
@@ -141,7 +183,7 @@ class Indexer:
 
     def build(self, verbose: bool = True) -> dict:
         """Full index build. Returns statistics."""
-        files = self.find_python_files()
+        files = self.find_files()
         indexed = skipped = errors = 0
         conn = get_db(self.db_path)
 
@@ -155,7 +197,7 @@ class Indexer:
                 except Exception as e:
                     errors += 1
                     if verbose:
-                        print(f"  Error indexing {f}: {e}", file=sys.stderr)
+                        import traceback; traceback.print_exc()
 
             removed = self._cleanup_deleted(conn)
         finally:
@@ -168,11 +210,17 @@ class Indexer:
 
     def _cleanup_deleted(self, conn: sqlite3.Connection) -> int:
         """Remove entries for files that no longer exist on disk."""
-        rows = conn.execute("SELECT id, path FROM files").fetchall()
+        rows = conn.execute("SELECT id, path, relative_path FROM files").fetchall()
         removed = 0
+
         for row in rows:
             if not Path(row["path"]).exists():
+                try:
+                    conn.execute("DELETE FROM doc_fts WHERE file_path = ?", (row["relative_path"],))
+                except Exception:
+                    pass
                 conn.execute("DELETE FROM files WHERE id = ?", (row["id"],))
+
                 removed += 1
         if removed:
             conn.commit()

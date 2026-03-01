@@ -43,14 +43,21 @@ def search_symbols(db_path: Path, pattern: str) -> list[dict]:
     try:
         if "%" not in pattern:
             pattern = f"%{pattern}%"
-        rows = conn.execute(
-            """SELECT s.name, s.qualified_name, s.type, s.line, s.signature,
-                      f.relative_path
-               FROM symbols s JOIN files f ON s.file_id = f.id
-               WHERE s.name LIKE ? OR s.qualified_name LIKE ?
-               ORDER BY f.relative_path, s.line LIMIT 50""",
-            (pattern, pattern),
-        ).fetchall()
+        sql = """
+            SELECT name, qualified_name, type, line, signature, f.relative_path
+            FROM symbols s JOIN files f ON s.file_id = f.id
+            WHERE s.name LIKE ? OR s.qualified_name LIKE ?
+            UNION ALL
+            SELECT name, parent_class || '.' || name, symbol_type as type, line, NULL as signature, f.relative_path
+            FROM js_file_symbols js JOIN files f ON js.file_id = f.id
+            WHERE js.name LIKE ?
+            UNION ALL
+            SELECT heading as name, NULL as qualified_name, 'doc_section' as type, line, NULL as signature, f.relative_path
+            FROM doc_sections d JOIN files f ON d.file_id = f.id
+            WHERE d.heading LIKE ?
+            ORDER BY relative_path, line LIMIT 50
+        """
+        rows = conn.execute(sql, (pattern, pattern, pattern, pattern)).fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()
@@ -299,5 +306,71 @@ def get_stats(db_path: Path) -> dict:
             "route_types": {r["route_type"]: r["cnt"] for r in route_types},
             "largest_files": [dict(r) for r in largest],
         }
+    finally:
+        conn.close()
+
+
+def query_docs(db_path: Path, query: str, limit: int = 10, dir_path: str = None) -> list[dict]:
+    conn = get_db(db_path)
+    try:
+        sql = """SELECT file_path, heading,
+                      snippet(doc_fts, 2, '>>>', '<<<', '...', 40) as snippet, rank
+               FROM doc_fts WHERE doc_fts MATCH ?"""
+        params = [query]
+        if dir_path:
+            sql += " AND file_path LIKE ?"
+            params.append(f"{dir_path}%")
+        sql += " ORDER BY rank LIMIT ?"
+        params.append(limit)
+        try:
+            rows = conn.execute(sql, params).fetchall()
+            return [dict(r) for r in rows]
+        except Exception:
+            return []
+    finally:
+        conn.close()
+
+def query_doc_sections(db_path: Path, path: str) -> list[dict]:
+    conn = get_db(db_path)
+    try:
+        file_id = _resolve_file(conn, path)
+        if not file_id:
+            return []
+        rows = conn.execute(
+            """SELECT heading, level, line, end_line, parent_id
+               FROM doc_sections WHERE file_id = ? ORDER BY line""",
+            (file_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+def query_js_files(db_path: Path, search: str = None, classes_only: bool = False) -> list[dict]:
+    conn = get_db(db_path)
+    try:
+        sql = """SELECT j.name, j.symbol_type, j.line, j.parent_class, f.relative_path
+                 FROM js_file_symbols j JOIN files f ON j.file_id = f.id WHERE 1=1"""
+        params = []
+        if search:
+            sql += " AND j.name LIKE ?"
+            params.append(f"%{search}%")
+        if classes_only:
+            sql += " AND j.symbol_type = 'class'"
+        sql += " ORDER BY f.relative_path, j.line"
+        rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+def query_callbacks(db_path: Path) -> list[dict]:
+    conn = get_db(db_path)
+    try:
+        rows = conn.execute(
+            """SELECT c.caller_qualified, c.callee_name, c.callee_object, c.line, f.relative_path
+               FROM call_references c JOIN files f ON c.file_id = f.id
+               WHERE c.callee_type = 'callback_wire'
+               ORDER BY f.relative_path, c.line"""
+        ).fetchall()
+        return [dict(r) for r in rows]
     finally:
         conn.close()

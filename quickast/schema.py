@@ -74,4 +74,38 @@ CREATE INDEX IF NOT EXISTS idx_api_path ON api_routes(path);
 CREATE INDEX IF NOT EXISTS idx_api_type ON api_routes(route_type);
 CREATE INDEX IF NOT EXISTS idx_api_handler ON api_routes(handler_function);
 CREATE INDEX IF NOT EXISTS idx_api_file ON api_routes(file_id);
+
+CREATE TABLE IF NOT EXISTS js_file_symbols (
+    id INTEGER PRIMARY KEY,
+    file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    symbol_type TEXT NOT NULL,
+    line INTEGER NOT NULL,
+    end_line INTEGER,
+    params TEXT,
+    interval_ms INTEGER,
+    parent_class TEXT
+);
+
+CREATE TABLE IF NOT EXISTS doc_sections (
+    id INTEGER PRIMARY KEY,
+    file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    heading TEXT NOT NULL,
+    level INTEGER NOT NULL,
+    line INTEGER NOT NULL,
+    end_line INTEGER,
+    parent_id INTEGER REFERENCES doc_sections(id) ON DELETE CASCADE
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS doc_fts USING fts5(
+    file_path,
+    heading,
+    content,
+    tokenize='porter unicode61'
+);
+
+CREATE INDEX IF NOT EXISTS idx_jsf_name ON js_file_symbols(name);
+CREATE INDEX IF NOT EXISTS idx_jsf_file ON js_file_symbols(file_id);
+CREATE INDEX IF NOT EXISTS idx_jsf_type ON js_file_symbols(symbol_type);
+CREATE INDEX IF NOT EXISTS idx_doc_file ON doc_sections(file_id);
 """

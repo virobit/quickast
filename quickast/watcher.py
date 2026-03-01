@@ -23,7 +23,7 @@ class IndexEventHandler:
         self._index_lock = Lock()
 
     def _should_process(self, path: str) -> bool:
-        if not path.endswith(".py"):
+        if not (path.endswith(".py") or path.endswith(".js") or path.endswith(".md")):
             return False
         return not self.indexer.should_skip(Path(path))
 
@@ -124,7 +124,7 @@ def start_watcher(project_root: Path, db_path: Path | None = None,
     pid_file.write_text(str(os.getpid()))
 
     if not daemon:
-        print(f"Watching {project_root} for Python file changes (PID {os.getpid()})...")
+        print(f"Watching {project_root} for file changes (PID {os.getpid()})...")
 
     running = True
 

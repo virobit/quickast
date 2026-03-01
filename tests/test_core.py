@@ -199,7 +199,7 @@ class TestIndexer:
         venv.mkdir(parents=True)
         (venv / "something.py").write_text("x = 1\n")
         indexer = Indexer(project_dir)
-        files = indexer.find_python_files()
+        files = indexer.find_files()
         rel_paths = [str(f.relative_to(project_dir)) for f in files]
         assert not any(p.startswith("venv/") for p in rel_paths)
 

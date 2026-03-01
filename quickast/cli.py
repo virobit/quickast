@@ -9,6 +9,7 @@ from .queries import (
     get_stats, query_callers_of, query_callees, query_changes,
     query_file_symbols, query_impact, query_references, query_route,
     query_routes, query_summary, query_symbol, search_symbols,
+    query_docs, query_doc_sections, query_js_files, query_callbacks,
 )
 
 USAGE = """\
@@ -33,6 +34,11 @@ Usage:
     quickast changes [hours]            Files changed recently (default: 24h)
     quickast summary <path>             Module overview
     quickast stats                      Index statistics
+    quickast docs <query>               FTS search across markdown docs
+    quickast docs list [dir]            List indexed docs
+    quickast docs sections <file>       Show heading structure
+    quickast js-files [search <name>]   List standalone JS symbols
+    quickast callbacks                  List callback wirings
     quickast version                    Show version
 """
 
@@ -319,6 +325,77 @@ def cmd_stats():
             print(f"    {f['relative_path']:50s} {f['line_count']:,} lines")
 
 
+
+def cmd_docs(args: list[str]):
+    db_path = _get_db_path()
+    _ensure_index(db_path)
+    if not args:
+        print("Usage: quickast docs <query> | list [dir] | sections <file>")
+        return
+    subcmd = args[0]
+    if subcmd == "list":
+        dir_path = args[1] if len(args) > 1 else None
+        # query_docs with empty string will fail FTS, we can query distinct paths from doc_sections
+        from .db import get_db
+        conn = get_db(db_path)
+        sql = "SELECT DISTINCT f.relative_path FROM doc_sections d JOIN files f ON d.file_id = f.id"
+        params = []
+        if dir_path:
+            sql += " WHERE f.relative_path LIKE ?"
+            params.append(f"{dir_path}%")
+        sql += " ORDER BY f.relative_path"
+        for row in conn.execute(sql, params).fetchall():
+            print(f"  {row['relative_path']}")
+        conn.close()
+    elif subcmd == "sections":
+        if len(args) < 2:
+            print("Usage: quickast docs sections <file>")
+            return
+        results = query_doc_sections(db_path, args[1])
+        if not results:
+            print("No sections found.")
+            return
+        for r in results:
+            indent = "  " * (r['level'] - 1)
+            print(f"{indent}H{r['level']} L{r['line']} {r['heading']}")
+    else:
+        results = query_docs(db_path, " ".join(args))
+        if not results:
+            print("No matches.")
+            return
+        for r in results:
+            print(f"[{r['file_path']}] {r['heading']}")
+            if r['snippet']:
+                snip = r['snippet'].replace('\n', ' ')
+                print(f"  {snip}")
+
+def cmd_js_files(args: list[str]):
+    db_path = _get_db_path()
+    _ensure_index(db_path)
+    search = None
+    classes_only = False
+    if args and args[0] == "search" and len(args) > 1:
+        search = args[1]
+    if args and args[0] == "classes":
+        classes_only = True
+    results = query_js_files(db_path, search, classes_only)
+    if not results:
+        print("No JS symbols found.")
+        return
+    for r in results:
+        parent = f"{r['parent_class']}." if r.get("parent_class") else ""
+        print(f"  {r['symbol_type']:12s} {parent}{r['name']} in {r['relative_path']}:{r['line']}")
+
+def cmd_callbacks(args: list[str]):
+    db_path = _get_db_path()
+    _ensure_index(db_path)
+    results = query_callbacks(db_path)
+    if not results:
+        print("No callback wirings found.")
+        return
+    for r in results:
+        print(f"  {r['relative_path']}:{r['line']} {r['caller_qualified']} wired {r['callee_name']} via {r['callee_object']}")
+
 def cmd_version():
     from . import __version__
     print(f"quickast {__version__}")
@@ -350,6 +427,9 @@ def main():
         "summary": lambda: cmd_summary(rest),
         "stop": lambda: cmd_stop(),
         "stats": lambda: cmd_stats(),
+        "docs": lambda: cmd_docs(rest),
+        "js-files": lambda: cmd_js_files(rest),
+        "callbacks": lambda: cmd_callbacks(rest),
         "version": lambda: cmd_version(),
         "--version": lambda: cmd_version(),
     }

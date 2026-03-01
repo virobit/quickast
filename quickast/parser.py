@@ -1,6 +1,7 @@
 """AST parsing for Python files — extracts symbols, imports, calls, and routes."""
 
 import ast
+import re
 import json
 from pathlib import Path
 
@@ -185,11 +186,35 @@ class _CallVisitor(ast.NodeVisitor):
                 ctype = "method"
             else:
                 ctype = "attribute"
+            # Detect set_*_callback() wiring pattern
+            if (func.attr.startswith("set_") and func.attr.endswith("_callback")
+                    and node.args):
+                arg = node.args[0]
+                cb_name = getattr(arg, "id", None) if isinstance(arg, ast.Name) else None
+                if cb_name:
+                    self.calls.append({
+                        "caller": caller, "callee_name": cb_name,
+                        "callee_type": "callback_wire",
+                        "callee_object": f"{obj_name}.{func.attr}",
+                        "line": node.lineno,
+                    })
             self.calls.append({
                 "caller": caller, "callee_name": func.attr,
                 "callee_type": ctype, "callee_object": obj_name,
                 "line": node.lineno,
             })
+
+
+        # Detect on_* keyword args as callback wiring
+        for kw in node.keywords:
+            if (kw.arg and kw.arg.startswith("on_")
+                    and isinstance(kw.value, ast.Name)):
+                self.calls.append({
+                    "caller": caller, "callee_name": kw.value.id,
+                    "callee_type": "callback_wire",
+                    "callee_object": f"kwarg:{kw.arg}",
+                    "line": node.lineno,
+                })
 
         self.generic_visit(node)
 
@@ -296,3 +321,196 @@ def _extract_routes(tree, routes: list):
                         "description": _get_docstring(node),
                         "extra": None,
                     })
+
+    # Router mount tracking: app.include_router(router_name)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not (isinstance(node.func, ast.Attribute) and node.func.attr == "include_router"):
+            continue
+        obj = node.func.value
+        app_name = getattr(obj, "id", "?") if isinstance(obj, ast.Name) else "?"
+        router_arg = node.args[0] if node.args else None
+        router_name = getattr(router_arg, "id", "?") if isinstance(router_arg, ast.Name) else "?"
+        prefix = ""
+        for kw in node.keywords:
+            if kw.arg == "prefix" and isinstance(kw.value, ast.Constant):
+                prefix = kw.value.value
+        routes.append({
+            "route_type": "router_mount",
+            "path": prefix or "(mounted)",
+            "method": "INCLUDE_ROUTER",
+            "handler": router_name,
+            "qualified": f"{app_name}.include_router({router_name})",
+            "line": node.lineno,
+            "description": f"Router {router_name} mounted on {app_name}",
+            "extra": json.dumps({"app": app_name, "router": router_name, "prefix": prefix}),
+        })
+
+
+# ── JS/MD Parsing ───────────────────────────────────────────────────
+
+_JS_PATTERNS = [
+    (re.compile(r'(?:async\s+)?function\s+(\w+)\s*\('), "function"),
+    (re.compile(r'(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?(?:\([^)]*\)|[a-zA-Z_]\w*)\s*=>'), "arrow_function"),
+    (re.compile(r'setInterval\s*\('), "setInterval"),
+    (re.compile(r'setTimeout\s*\('), "setTimeout"),
+]
+_INTERVAL_RE = re.compile(r',\s*(\d+)\s*\)')
+
+_JS_CLASS_RE = re.compile(r'^\s*class\s+(\w+)')
+_JS_METHOD_RE = re.compile(r'^\s+(?:async\s+)?(\w+)\s*\(([^)]*)\)\s*\{')
+_JS_NOT_METHODS = frozenset({"if", "else", "for", "while", "switch", "catch", "return", "new", "typeof", "delete", "void", "throw"})
+_JS_GETTER_RE = re.compile(r'^\s+get\s+(\w+)\s*\(\)')
+_JS_STATIC_RE = re.compile(r'^(\w+)\.(\w+)\s*=\s*function')
+
+def parse_js_file(filepath: Path) -> dict:
+    result = {"js_symbols": [], "line_count": 0}
+    try:
+        source = filepath.read_text(encoding="utf-8", errors="replace")
+    except (OSError, UnicodeDecodeError):
+        return result
+
+    lines = source.split("\n")
+    result["line_count"] = len(lines)
+
+    current_class = None
+    brace_depth = 0
+    class_start_depth = 0
+
+    for line_num, line in enumerate(lines, 1):
+        stripped = line.strip()
+        brace_depth += stripped.count("{") - stripped.count("}")
+
+        m = _JS_CLASS_RE.match(line)
+        if m:
+            current_class = m.group(1)
+            class_start_depth = brace_depth
+            result["js_symbols"].append({
+                "name": current_class, "symbol_type": "class",
+                "line": line_num, "end_line": None, "params": None,
+                "interval_ms": None, "parent_class": None,
+            })
+            continue
+
+        if current_class and brace_depth < class_start_depth:
+            current_class = None
+
+        if current_class:
+            m = _JS_GETTER_RE.match(line)
+            if m:
+                result["js_symbols"].append({
+                    "name": m.group(1), "symbol_type": "getter",
+                    "line": line_num, "end_line": None, "params": None,
+                    "interval_ms": None, "parent_class": current_class,
+                })
+                continue
+
+        if current_class:
+            m = _JS_METHOD_RE.match(line)
+            if m and m.group(1) not in _JS_NOT_METHODS:
+                result["js_symbols"].append({
+                    "name": m.group(1), "symbol_type": "method",
+                    "line": line_num, "end_line": None, "params": m.group(2).strip(),
+                    "interval_ms": None, "parent_class": current_class,
+                })
+                continue
+
+        m = _JS_STATIC_RE.match(stripped)
+        if m:
+            result["js_symbols"].append({
+                "name": m.group(2), "symbol_type": "static_method",
+                "line": line_num, "end_line": None, "params": None,
+                "interval_ms": None, "parent_class": m.group(1),
+            })
+            continue
+
+        if not current_class:
+            for pattern, sym_type in _JS_PATTERNS:
+                pm = pattern.search(line)
+                if not pm:
+                    continue
+                if sym_type in ("setInterval", "setTimeout"):
+                    interval_ms = None
+                    search_text = "\n".join(lines[line_num - 1:line_num + 4])
+                    iv = _INTERVAL_RE.search(search_text)
+                    if iv:
+                        try:
+                            interval_ms = int(iv.group(1))
+                        except ValueError:
+                            pass
+                    result["js_symbols"].append({
+                        "name": sym_type, "symbol_type": sym_type,
+                        "line": line_num, "end_line": None, "params": None,
+                        "interval_ms": interval_ms, "parent_class": None,
+                    })
+                else:
+                    name = pm.group(1) if pm.lastindex and pm.group(1) else f"anon_{line_num}"
+                    result["js_symbols"].append({
+                        "name": name, "symbol_type": sym_type,
+                        "line": line_num, "end_line": None, "params": None,
+                        "interval_ms": None, "parent_class": None,
+                    })
+                break
+
+    return result
+
+_HEADING_RE = re.compile(r'^(#{1,4})\s+(.+)')
+
+def parse_markdown_file(filepath: Path) -> dict:
+    result = {"sections": [], "fts_entries": [], "line_count": 0}
+    try:
+        source = filepath.read_text(encoding="utf-8", errors="replace")
+    except (OSError, UnicodeDecodeError):
+        return result
+
+    lines = source.split("\n")
+    result["line_count"] = len(lines)
+
+    rel_path = str(filepath)
+    headings = []
+    for line_num, line in enumerate(lines, 1):
+        m = _HEADING_RE.match(line)
+        if m:
+            headings.append({
+                "heading": m.group(2).strip(),
+                "level": len(m.group(1)),
+                "line": line_num,
+                "end_line": None,
+                "parent_idx": None,
+            })
+
+    for i, h in enumerate(headings):
+        if i + 1 < len(headings):
+            h["end_line"] = headings[i + 1]["line"] - 1
+        else:
+            h["end_line"] = len(lines)
+
+    parent_stack = []
+    for i, h in enumerate(headings):
+        while parent_stack and parent_stack[-1][0] >= h["level"]:
+            parent_stack.pop()
+        if parent_stack:
+            h["parent_idx"] = parent_stack[-1][1]
+        parent_stack.append((h["level"], i))
+
+    result["sections"] = headings
+
+    for h in headings:
+        start = h["line"]
+        end = h["end_line"]
+        content = "\n".join(lines[start - 1:end])
+        result["fts_entries"].append({
+            "file_path": rel_path,
+            "heading": h["heading"],
+            "content": content,
+        })
+
+    if not headings and source.strip():
+        result["fts_entries"].append({
+            "file_path": rel_path,
+            "heading": filepath.stem,
+            "content": source[:10000],
+        })
+
+    return result
