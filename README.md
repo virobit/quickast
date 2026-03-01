@@ -4,9 +4,9 @@
 
 <h1 align="center">QuickAST</h1>
 
-<p align="center"><strong>AST-powered codebase index for Python projects.</strong></p>
+<p align="center"><strong>AST-powered codebase index for Python, JavaScript, and Markdown.</strong></p>
 
-QuickAST parses your Python codebase, builds a SQLite index of every symbol, call relationship, import, and API route, then keeps it current with automatic file watching.
+QuickAST parses your codebase, builds a SQLite index of every symbol, call relationship, import, API route, and documentation section, then keeps it current with automatic file watching.
 
 ## Installation
 
@@ -112,14 +112,24 @@ Re-indexes any file you save. The index stays current without manual rebuilds.
 | `quickast route <path>` | Find a specific route handler |
 | `quickast changes [hours]` | Files changed recently (default: 24 hours) |
 | `quickast summary <path>` | Module overview (symbol counts, top definitions) |
+| `quickast docs <query>` | Full-text search across indexed markdown documentation |
+| `quickast docs list [dir]` | List all indexed markdown files |
+| `quickast docs sections <file>` | Show heading structure of a markdown file |
+| `quickast js-files [search <name>]` | List JavaScript symbols (classes, functions, methods) |
+| `quickast js-files classes` | List only JavaScript classes |
+| `quickast callbacks` | List callback wirings (`set_*_callback`, `on_*` patterns) |
 | `quickast stats` | Index statistics |
 
 ## What Gets Indexed
 
-- **Symbols** — Every function, class, and method with full signatures, docstrings, and line numbers
+- **Python symbols** — Every function, class, and method with full signatures, docstrings, and line numbers
 - **Call graph** — Every function call with caller/callee context (who calls X, what does X call)
+- **Callback wirings** — `set_*_callback()` and `on_*` keyword argument patterns
 - **Imports** — Every import statement (which files use module X)
 - **API routes** — FastAPI, Flask, and Click decorator patterns
+- **Router mounts** — `include_router()` calls with prefix tracking
+- **JavaScript symbols** — Classes, methods, functions, arrow functions, getters, `setInterval`/`setTimeout` (regex-based)
+- **Markdown documentation** — Heading hierarchy with parent-child relationships, plus full-text search (FTS5)
 - **File metadata** — Line counts, modification times, file sizes
 
 ## Capabilities
@@ -128,8 +138,12 @@ Re-indexes any file you save. The index stays current without manual rebuilds.
 |---------|-------------|
 | Persistent SQLite index | Index once, query instantly — no re-parsing on each lookup |
 | Call graph | Trace callers and callees across the entire codebase |
+| Callback wiring detection | Finds `set_*_callback()` and `on_*` keyword patterns |
 | Transitive impact analysis | See the full upstream/downstream dependency chain at any depth |
-| API route map | Automatically detects REST endpoints, CLI commands, and page routes |
+| API route map | Automatically detects REST endpoints, CLI commands, page routes, and router mounts |
+| JavaScript indexing | Regex-based extraction of classes, methods, functions, arrow functions, timers |
+| Markdown FTS | Full-text search across documentation with heading hierarchy |
+| Cross-type search | `search` command queries Python symbols, JS symbols, and doc headings in one call |
 | Live file watching | File watcher re-indexes on save — index stays current |
 | Incremental indexing | Only re-indexes files that changed since the last build |
 | Framework detection | Recognizes FastAPI, Flask, and Click patterns out of the box |
@@ -147,12 +161,15 @@ This project has a QuickAST index. Query it before grepping:
 
 \`\`\`bash
 quickast query <name>         # Find symbol definitions
-quickast search %keyword%     # Fuzzy search
+quickast search %keyword%     # Fuzzy search (Python + JS + docs)
 quickast callers-of <name>    # Who calls this?
 quickast callees <name>       # What does this call?
 quickast file <path>          # What's in this file?
 quickast impact <name>        # Full dependency chain
 quickast routes               # API surface map
+quickast docs <query>         # Full-text search in markdown docs
+quickast js-files             # JavaScript symbols
+quickast callbacks            # Callback wirings
 \`\`\`
 
 Always query the index first. Only fall back to grep for string literals,
@@ -165,13 +182,21 @@ QuickAST is a standard CLI tool. Any AI agent that can run shell commands can us
 
 ## How It Works
 
-1. **Parse** — Uses Python's built-in `ast` module to parse every `.py` file
-2. **Extract** — Pulls symbols, imports, call relationships, and route decorators from the AST
-3. **Store** — Writes everything to a SQLite database (`.quickast.db`) in your project root
+1. **Parse** — Uses Python's `ast` module for `.py` files, regex patterns for `.js` files, and heading extraction for `.md` files
+2. **Extract** — Pulls symbols, imports, call relationships, callback wirings, route decorators, router mounts, JS classes/functions, and markdown headings
+3. **Store** — Writes everything to a SQLite database (`.quickast.db`) with FTS5 for documentation search
 4. **Watch** — The file watcher uses `watchdog` to detect changes and re-index modified files
 5. **Query** — The CLI reads from SQLite, returning results in under 1ms
 
 The index is a single `.quickast.db` file. Add it to `.gitignore` — it can be rebuilt in seconds.
+
+### Supported File Types
+
+| Extension | Parser | What Gets Extracted |
+|-----------|--------|-------------------|
+| `.py` | Python `ast` module | Symbols, calls, imports, routes, callbacks |
+| `.js` | Regex patterns | Classes, methods, functions, arrow functions, timers |
+| `.md` | Heading extraction | Section hierarchy, full-text search content |
 
 ## Configuration
 
@@ -188,7 +213,7 @@ QuickAST automatically excludes common non-source directories:
 - **OS**: Linux, macOS
 - **Dependencies**: `watchdog` (for file watching)
 
-No external parsing libraries — QuickAST uses Python's built-in `ast` module.
+No external parsing libraries — QuickAST uses Python's built-in `ast` module for Python files and regex patterns for JavaScript files.
 
 ## License
 
@@ -207,7 +232,7 @@ pip install -e ".[dev]"    # Installs pytest and pytest-cov
 pytest tests/ -v           # Run from inside the quickast directory
 ```
 
-All 24 tests should pass. The tests cover parsing, indexing, incremental builds, and all query types using temporary project directories — no external dependencies or network access required.
+All tests should pass. The tests cover Python/JS/Markdown parsing, callback detection, router mount tracking, multi-file-type indexing, incremental builds, and all query types using temporary project directories — no external dependencies or network access required.
 
 ## Contributing
 
